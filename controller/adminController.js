@@ -39,7 +39,7 @@ export const addFeature = async (req, res) => {
 export const addFeatureCapability = async (req, res) => {
   try {
     const { capability_id, features_json } = req.body;
-    await pool.query("INSERT INTO features_capability (capability_id, features_json) VALUES (?, ?)", [
+    await pool.query("INSERT INTO feature_capability (capability_id, features_json) VALUES (?, ?)", [
       capability_id,
       JSON.stringify(features_json),
     ]);

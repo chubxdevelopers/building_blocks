@@ -1,0 +1,26 @@
+{
+  "users": {
+    "table": "users",
+    "alias": "u",
+    "fields": {
+      "id": "u.id",
+      "name": "u.name",
+      "email": "u.email"
+    },
+    "relations": {
+      "team": {
+        "table": "teams",
+        "alias": "t",
+        "on": "u.team_id = t.id"
+      }
+    }
+  },
+  "teams": {
+    "table": "teams",
+    "alias": "t",
+    "fields": {
+      "id": "t.id",
+      "name": "t.name"
+    }
+  }
+}

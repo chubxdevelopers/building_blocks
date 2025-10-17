@@ -17,7 +17,7 @@ export const loginUser = async (req, res) => {
 
     // Fetch role-based capability and features (permissions)
     const [capabilityRows] = await pool.query(
-      "SELECT f.features_json FROM features_capability f JOIN role_capability r ON f.capability_id = r.capability_id WHERE r.role = ? AND r.team = ? AND r.company = ?",
+      "SELECT f.features_json FROM feature_capability f JOIN role_capability r ON f.capability_id = r.capability_id WHERE r.role = ? AND r.team = ? AND r.company = ?",
       [user.role, user.team, user.company]
     );
 
@@ -48,7 +48,8 @@ export const loginUser = async (req, res) => {
     res.cookie("token", token, { httpOnly: true,sameSite: 'strict', maxAge: 7 * 24 * 3600 * 1000 });
     res.status(200).json({ message: "Login successful", user: tokenPayload });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error during login" });
+    console.error('Login error:', err);
+    // Include error.message during development to help debugging
+    res.status(500).json({ message: "Server error during login", error: err.message });
   }
 };
