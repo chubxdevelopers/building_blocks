@@ -33,3 +33,12 @@ CREATE TABLE role_capability (
     ON UPDATE CASCADE
 );
 
+-- Companies table used to store app/company specific settings and slug
+CREATE TABLE companies (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  slug VARCHAR(100) NOT NULL UNIQUE,
+  settings JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
