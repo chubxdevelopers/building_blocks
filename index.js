@@ -6,6 +6,7 @@ import adminRoutes from "./routes/adminRoute.js";
 import publicRoutes from "./routes/publicRoute.js";
 import userRoutes from "./routes/userRoute.js";
 import appRoutes from "./routes/appRoute.js";
+import queryRoutes from "./routes/queryRoute.js";
 import { appContext } from "./middleware/appContext.js";
 
 dotenv.config();
@@ -23,6 +24,8 @@ app.use("/api/:appSlug/admin", adminRoutes);
 app.use("/api/:appSlug/public", publicRoutes);
 app.use("/api/:appSlug/user", userRoutes);
 app.use("/api/:appSlug/app", appRoutes);
+// Expose a canonical query endpoint used by frontend clients: /api/query/v1/:resource
+app.use("/api/query", queryRoutes);
 
 app.listen(process.env.PORT, () => {
   console.log(`✅ Server running on port ${process.env.PORT}`);

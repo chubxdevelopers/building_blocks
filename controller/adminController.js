@@ -50,6 +50,23 @@ export const addFeatureCapability = async (req, res) => {
   }
 };
 
+export const registerAdmin = async (req, res) => {
+  try {
+    const { name, email, password, company } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const role = "admin";
+    const team = null; // Admin might not belong to a specific team
+    await pool.query(
+      "INSERT INTO users (name, email, password, role, team, company) VALUES (?, ?, ?, ?, ?, ?)",
+      [name, email, hashedPassword, role, team, company]
+    );
+    res.status(201).json({ message: "Admin registered successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error registering admin" });
+  }
+};
+
 // Map role-team-company to capability
 export const addRoleCapability = async (req, res) => {
   try {
