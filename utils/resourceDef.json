@@ -5,13 +5,36 @@
     "fields": {
       "id": "u.id",
       "name": "u.name",
-      "email": "u.email"
+      "email": "u.email",
+      "age": "u.age",
+      "status": "u.status",
+      "teamName": "t.name",
+      "teamDescription": "t.description"
+    },
+    "fieldTypes": {
+      "id": "integer",
+      "name": "string",
+      "email": "string",
+      "age": "integer",
+      "status": "string",
+      "teamName": "string",
+      "teamDescription": "string"
+    },
+    "aliases": {
+      "id": ["user id", "uid", "identifier"],
+      "name": ["user name", "full name", "personal name", "username"],
+      "email": ["email address", "mail", "user email"],
+      "age": ["user age", "years", "dob"], 
+      "status": ["account status", "user status"],
+      "teamName": ["team", "team name", "group name"],
+      "teamDescription": ["team info", "group description"]
     },
     "relations": {
       "team": {
         "table": "teams",
         "alias": "t",
-        "on": "u.team_id = t.id"
+        "on": "u.team_id = t.id",
+        "fields": ["teamName", "teamDescription"]
       }
     }
   },
@@ -21,6 +44,14 @@
     "fields": {
       "id": "t.id",
       "name": "t.name"
+    },
+    "fieldTypes": {
+      "id": "integer",
+      "name": "string"
+    },
+    "aliases": {
+      "id": ["team id", "tid"],
+      "name": ["team name", "group name"]
     }
   }
 }

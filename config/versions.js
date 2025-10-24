@@ -39,7 +39,7 @@ export const VERSION_FEATURES = {
     },
     resources: {
       // List of resources supported in this version
-      supported: ["base_resource", "users", "companies", "products"],
+      supported: ["base_resource", "users", "apps", "products"],
       // Resource field mappings for backwards compatibility
       fieldMappings: {
         base_resource: {

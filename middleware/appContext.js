@@ -8,58 +8,89 @@ import { pool } from "../db.js";
  */
 export const appContext = async (req, res, next) => {
   try {
+    // Expect URL shape: /api/:company/:appSlug/...
     const parts = req.path.split("/").filter(Boolean); // removes empty
 
+    let companySlug = null;
     let appSlug = null;
+
+    // parts may be ['api', company, appSlug, ...] or [company, appSlug, ...]
     if (parts.length > 0 && parts[0].toLowerCase() === "api") {
-      if (parts.length > 1) appSlug = parts[1];
+      companySlug = parts.length > 1 ? parts[1] : null;
+      appSlug = parts.length > 2 ? parts[2] : null;
     } else {
-      if (parts.length > 0) appSlug = parts[0];
+      companySlug = parts.length > 0 ? parts[0] : null;
+      appSlug = parts.length > 1 ? parts[1] : null;
     }
 
-    // Sometimes clients (Postman examples) include a leading ':' like
-    // '/api/:abc/auth' — normalize that by stripping a leading colon.
-    if (appSlug && appSlug.startsWith(":")) {
-      appSlug = appSlug.slice(1);
+    // normalize leading ':' if present
+    if (companySlug && companySlug.startsWith(":"))
+      companySlug = companySlug.slice(1);
+    if (appSlug && appSlug.startsWith(":")) appSlug = appSlug.slice(1);
+
+    // fallback to express params if not found in path
+    if ((!companySlug || !appSlug) && req.params) {
+      if (!companySlug && req.params.company) companySlug = req.params.company;
+      if (!appSlug && req.params.appSlug) appSlug = req.params.appSlug;
     }
 
-    // Also allow the Express param (if mounted) as a fallback
-    if (!appSlug && req.params && req.params.appSlug) {
-      appSlug = req.params.appSlug;
-      if (appSlug.startsWith(":")) appSlug = appSlug.slice(1);
-    }
-
-    if (!appSlug) {
+    // If neither slug present, skip attaching context
+    if (!companySlug) {
       req.company = null;
+      req.app = null;
       return next();
     }
 
-    const sql = "SELECT * FROM companies WHERE slug = ? LIMIT 1";
-    // Use promise-based query
-    const [results] = await pool.query(sql, [appSlug]);
-
-    if (!results || results.length === 0) {
-      // Company not found; return 404 so clients know the app is invalid
-      return res.status(404).json({ message: `App not found: ${appSlug}` });
+    // Load company record
+    const [companyRows] = await pool.query(
+      "SELECT * FROM companies WHERE slug = ? LIMIT 1",
+      [companySlug]
+    );
+    if (!companyRows || companyRows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: `Company not found: ${companySlug}` });
     }
-
-    const company = results[0];
-    // Normalize settings: if settings is a JSON string, parse it
+    const company = companyRows[0];
     try {
-      if (company.settings && typeof company.settings === "string") {
+      if (company.settings && typeof company.settings === "string")
         company.settings = JSON.parse(company.settings);
-      }
     } catch (e) {
-      // If JSON parse fails, keep as-is and log
       console.warn("Failed to parse company.settings JSON", e);
     }
 
+    // Attach company
     req.company = company;
 
-    // Remove the app slug segment from the URL so existing route mounts like
-    // '/api/auth' keep working when clients call '/api/:appSlug/auth'.
+    // If appSlug provided, load app under this company
+    if (appSlug) {
+      const [appRows] = await pool.query(
+        "SELECT * FROM apps WHERE slug = ? AND company_id = ? LIMIT 1",
+        [appSlug, company.id]
+      );
+      if (!appRows || appRows.length === 0) {
+        return res
+          .status(404)
+          .json({
+            message: `App not found: ${appSlug} for company ${companySlug}`,
+          });
+      }
+      const appRow = appRows[0];
+      try {
+        if (appRow.settings && typeof appRow.settings === "string")
+          appRow.settings = JSON.parse(appRow.settings);
+      } catch (e) {
+        console.warn("Failed to parse app.settings JSON", e);
+      }
+      req.app = appRow;
+    } else {
+      req.app = null;
+    }
+
+    // Remove the prefix '/api/:company/:appSlug' (or '/:company/:appSlug') from req.url
     try {
-      const prefix = `/api/${appSlug}`;
+      let prefix = `/api/${companySlug}/${appSlug}`;
+      if (appSlug == null) prefix = `/api/${companySlug}`;
       if (req.url && req.url.startsWith(prefix)) {
         req.url = req.url.replace(prefix, "/api");
       }

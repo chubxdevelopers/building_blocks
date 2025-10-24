@@ -8,33 +8,47 @@ import { pool } from "../db.js";
  */
 export const getAppQuery = async (req, res) => {
   try {
-    // Prefer company already loaded by middleware
     let company = req.company || null;
-    const appSlug =
-      req.params && req.params.appSlug ? req.params.appSlug : null;
+    let app = req.app || null;
 
-    if (!company) {
-      if (!appSlug)
-        return res.status(400).json({ message: "Missing app slug" });
-      const sql = "SELECT * FROM companies WHERE slug = ? LIMIT 1";
-      const [rows] = await pool.promise().query(sql, [appSlug]);
+    // If middleware didn't load company/app, try to resolve from params
+    const companySlug = req.params?.company || (company ? company.slug : null);
+    const appSlug = req.params?.appSlug || (app ? app.slug : null);
+
+    if (!company && companySlug) {
+      const [rows] = await pool
+        .promise()
+        .query("SELECT * FROM companies WHERE slug = ? LIMIT 1", [companySlug]);
       if (!rows || rows.length === 0)
         return res.status(404).json({ message: "Company not found" });
       company = rows[0];
-      // parse settings if needed
       try {
         if (company.settings && typeof company.settings === "string")
           company.settings = JSON.parse(company.settings);
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) {}
+    }
+
+    if (!app && appSlug && company) {
+      const [rows] = await pool
+        .promise()
+        .query("SELECT * FROM apps WHERE slug = ? AND company_id = ? LIMIT 1", [
+          appSlug,
+          company.id,
+        ]);
+      if (!rows || rows.length === 0)
+        return res.status(404).json({ message: "App not found" });
+      app = rows[0];
+      try {
+        if (app.settings && typeof app.settings === "string")
+          app.settings = JSON.parse(app.settings);
+      } catch (e) {}
     }
 
     const response = {
-      appSlug: appSlug || company.slug || null,
-      companyName: company.name || null,
-      settings: company.settings || {},
-      raw: company,
+      appSlug: app ? app.slug : company ? company.slug : null,
+      companyName: company ? company.name : null,
+      settings: app?.settings || company?.settings || {},
+      raw: app || company || null,
     };
 
     return res.json(response);

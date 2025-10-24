@@ -6,8 +6,30 @@ dotenv.config();
 
 export const signToken = (payload) => {
   // Generate JWT token using user info as payload
+  // Normalize and validate expiresIn value coming from env
+  const raw = process.env.JWT_EXPIRES_IN;
+  let expiresIn = raw;
+
+  if (!raw) {
+    // default to 7 days
+    expiresIn = "7d";
+  } else if (/^\d+$/.test(raw)) {
+    // pure number (seconds)
+    expiresIn = Number(raw);
+  } else if (/^\d+s$/.test(raw)) {
+    // e.g. '3600s' -> number of seconds
+    expiresIn = Number(raw.slice(0, -1));
+  } else if (/^\d+[smhd]$/.test(raw)) {
+    // e.g. '7d', '1h', '30m', '45s' -> pass through
+    expiresIn = raw;
+  } else {
+    // invalid value -> fallback to 7d
+    console.warn(`Invalid JWT_EXPIRES_IN value: ${raw}. Falling back to '7d'.`);
+    expiresIn = "7d";
+  }
+
   return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    expiresIn,
   });
 };
 
