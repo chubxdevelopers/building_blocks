@@ -5,6 +5,7 @@ import cors from "cors";
 import authRoutes from "./routes/authRoute.js";
 import adminRoutes from "./routes/adminRoute.js";
 import publicRoutes from "./routes/publicRoute.js";
+import publicApiRoutes from "./routes/publicApiRoute.js";
 import userRoutes from "./routes/userRoute.js";
 import appRoutes from "./routes/appRoute.js";
 import queryRoutes from "./routes/queryRoute.js";
@@ -38,6 +39,8 @@ app.use("/api/:company/:appSlug/admin", adminRoutes);
 app.use("/api/:company/:appSlug/public", publicRoutes);
 app.use("/api/:company/:appSlug/user", userRoutes);
 app.use("/api/:company/:appSlug/app", appRoutes);
+// Public endpoints that don't require company/app context (used by SelectCompany UI)
+app.use("/api/public", publicApiRoutes);
 // Expose a canonical query endpoint used by frontend clients: /api/query/v1/:resource
 app.use("/api/query", queryRoutes);
 

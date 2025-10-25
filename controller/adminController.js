@@ -6,13 +6,53 @@ import { signToken } from "../utils/jwt.js";
 export const addUser = async (req, res) => {
   try {
     const { name, email, password, role, team } = req.body;
-    // Prefer company from body, fall back to middleware-detected company slug
-    const company = req.body.company || req.company?.slug || null;
+
+    // Require company context
+    if (!req.company || !req.company.id) {
+      return res.status(400).json({ message: "Company context required" });
+    }
+
+    // Ensure team exists (find or create)
+    let teamId = null;
+    if (team) {
+      const [teamRows] = await pool.query(
+        "SELECT id FROM teams WHERE name = ? AND company_id = ? LIMIT 1",
+        [team, req.company.id]
+      );
+      if (teamRows.length === 0) {
+        const [tRes] = await pool.query(
+          "INSERT INTO teams (name, company_id) VALUES (?, ?)",
+          [team, req.company.id]
+        );
+        teamId = tRes.insertId;
+      } else {
+        teamId = teamRows[0].id;
+      }
+    }
+
+    // Ensure role exists (find or create)
+    let roleId = null;
+    if (role) {
+      const [roleRows] = await pool.query(
+        "SELECT id FROM roles WHERE name = ? AND company_id = ? LIMIT 1",
+        [role, req.company.id]
+      );
+      if (roleRows.length === 0) {
+        const [rRes] = await pool.query(
+          "INSERT INTO roles (name, team_id, company_id) VALUES (?, ?, ?)",
+          [role, teamId || null, req.company.id]
+        );
+        roleId = rRes.insertId;
+      } else {
+        roleId = roleRows[0].id;
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await pool.query(
-      "INSERT INTO users (name, email, password, role, team, company) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, email, hashedPassword, role, team, company]
+      "INSERT INTO users (name, email, password, role_id, team_id, company_id) VALUES (?, ?, ?, ?, ?, ?)",
+      [name, email, hashedPassword, roleId, teamId, req.company.id]
     );
 
     res.status(201).json({ message: "User added successfully" });
@@ -83,10 +123,18 @@ export const getCapabilities = async (req, res) => {
   }
 };
 
-// Get roles list
+// Get roles list (scoped to company if available)
 export const getRoles = async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT id, name FROM roles");
+    let rows;
+    if (req.company && req.company.id) {
+      [rows] = await pool.query(
+        "SELECT id, name FROM roles WHERE company_id = ?",
+        [req.company.id]
+      );
+    } else {
+      [rows] = await pool.query("SELECT id, name FROM roles");
+    }
     res.status(200).json(rows);
   } catch (err) {
     console.error(err);
@@ -94,34 +142,87 @@ export const getRoles = async (req, res) => {
   }
 };
 
+// Register admin (create team, role, user)
 export const registerAdmin = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    // Inferred company from middleware or request body
-    const company = req.body.company || req.company?.slug || null;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const role = "admin";
-    const team = null; // Admin might not belong to a specific team
-    await pool.query(
-      "INSERT INTO users (name, email, password, role, team, company) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, email, hashedPassword, role, team, company]
+
+    // Company context is required (provided by appContext middleware)
+    if (!req.company || !req.company.id) {
+      return res
+        .status(400)
+        .json({ message: "Company context required in URL" });
+    }
+
+    // Check if email already exists
+    const [existingUsers] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [email]
     );
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
+
+    // 1) Ensure default team exists for company
+    const defaultTeamName = "Default";
+    let teamId;
+    const [teamRows] = await pool.query(
+      "SELECT id FROM teams WHERE name = ? AND company_id = ? LIMIT 1",
+      [defaultTeamName, req.company.id]
+    );
+    if (teamRows.length === 0) {
+      const [tRes] = await pool.query(
+        "INSERT INTO teams (name, company_id) VALUES (?, ?)",
+        [defaultTeamName, req.company.id]
+      );
+      teamId = tRes.insertId;
+    } else {
+      teamId = teamRows[0].id;
+    }
+
+    // 2) Ensure Admin role exists for company
+    const adminRoleName = "Admin";
+    let roleId;
+    const [roleRows] = await pool.query(
+      "SELECT id FROM roles WHERE name = ? AND company_id = ? LIMIT 1",
+      [adminRoleName, req.company.id]
+    );
+    if (roleRows.length === 0) {
+      const [rRes] = await pool.query(
+        "INSERT INTO roles (name, team_id, company_id) VALUES (?, ?, ?)",
+        [adminRoleName, teamId, req.company.id]
+      );
+      roleId = rRes.insertId;
+    } else {
+      roleId = roleRows[0].id;
+    }
+
+    // 3) Create user with FK ids
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [userRes] = await pool.query(
+      "INSERT INTO users (name, email, password, role_id, team_id, company_id) VALUES (?, ?, ?, ?, ?, ?)",
+      [name, email, hashedPassword, roleId, teamId, req.company.id]
+    );
+
     const tokenPayload = {
+      id: userRes.insertId,
       name,
       email,
-      role,
-      company,
+      role: adminRoleName,
+      companyId: req.company.id,
+      company: req.company.slug,
     };
 
     const token = signToken(tokenPayload);
 
-    // Send token as cookie. Use 'lax' on development to allow cross-port cookies; in production prefer 'strict' or 'none' with secure.
+    // Send token as cookie
     res.cookie("token", token, {
       httpOnly: true,
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
       secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 3600 * 1000,
     });
+
     res
       .status(200)
       .json({ message: "register successful", user: tokenPayload });
@@ -133,7 +234,7 @@ export const registerAdmin = async (req, res) => {
   }
 };
 
-// Map role-team-company to capability
+// Map role-team-company to capability (legacy shape: role/team/company names)
 export const addRoleCapability = async (req, res) => {
   try {
     const { role, team, capability_id } = req.body;

@@ -23,6 +23,19 @@ export const appContext = async (req, res, next) => {
       appSlug = parts.length > 1 ? parts[1] : null;
     }
 
+    // If this is a root public API path (e.g. /api/public/...), skip context
+    // detection — these endpoints are global and should not be treated as a
+    // company/app-scoped request. Exit early so mounted public routes can run.
+    if (
+      parts.length > 1 &&
+      parts[0].toLowerCase() === "api" &&
+      parts[1].toLowerCase() === "public"
+    ) {
+      req.company = null;
+      req.app = null;
+      return next();
+    }
+
     // normalize leading ':' if present
     if (companySlug && companySlug.startsWith(":"))
       companySlug = companySlug.slice(1);
@@ -69,11 +82,9 @@ export const appContext = async (req, res, next) => {
         [appSlug, company.id]
       );
       if (!appRows || appRows.length === 0) {
-        return res
-          .status(404)
-          .json({
-            message: `App not found: ${appSlug} for company ${companySlug}`,
-          });
+        return res.status(404).json({
+          message: `App not found: ${appSlug} for company ${companySlug}`,
+        });
       }
       const appRow = appRows[0];
       try {
@@ -87,16 +98,21 @@ export const appContext = async (req, res, next) => {
       req.app = null;
     }
 
-    // Remove the prefix '/api/:company/:appSlug' (or '/:company/:appSlug') from req.url
-    try {
-      let prefix = `/api/${companySlug}/${appSlug}`;
-      if (appSlug == null) prefix = `/api/${companySlug}`;
-      if (req.url && req.url.startsWith(prefix)) {
-        req.url = req.url.replace(prefix, "/api");
-      }
-    } catch (e) {
-      // ignore
-    }
+    // NOTE: Previously we rewrote req.url to remove the company/app prefix
+    // which breaks Express route matching when routes are mounted under
+    // `/api/:company/:appSlug/...`. Do NOT modify req.url here — keep the
+    // original URL so mounted routes receive the correct path.
+    // (Left intentionally blank)
+
+    // Debug log
+    console.log(
+      "[appContext] companySlug=",
+      companySlug,
+      "appSlug=",
+      appSlug,
+      "-> req.path=",
+      req.path
+    );
 
     return next();
   } catch (err) {
