@@ -6,15 +6,6 @@ import { signToken, verifyToken } from "../utils/jwt.js";
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    console.log('Login attempt:', { 
-      email, 
-      reqPath: req.path,
-      reqParams: req.params,
-      reqCompany: req.company,
-      reqApp: req.app
-    });
-
     // Determine current company/app from middleware (req.company) or params
     const companySlug = req.company?.slug || req.params?.company || null;
     const appSlug = req.app?.slug || req.params?.appSlug || null;
@@ -207,15 +198,6 @@ export const loginUser = async (req, res) => {
     });
   } catch (err) {
     console.error("Login error:", err);
-    console.error('Login error details:', {
-      code: err.code,
-      sql: err.sql,
-      sqlMessage: err.sqlMessage,
-      stack: err.stack,
-      path: req.path,
-      company: req.company,
-      app: req.app
-    });
     // Include error.message during development to help debugging
     res
       .status(500)
