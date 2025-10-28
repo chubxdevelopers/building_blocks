@@ -86,19 +86,20 @@ export const getFeatures = async (req, res) => {
     res.status(200).json(rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error fetching features" });
+    // Return empty list if table missing or empty to allow UI empty-state
+    res.status(200).json([]);
   }
 };
 
 // Add feature capability
 export const addFeatureCapability = async (req, res) => {
   try {
-    const { capability_id, features_json } = req.body;
-    await pool.query(
-      "INSERT INTO feature_capability (capability_id, features_json) VALUES (?, ?)",
-      [capability_id, JSON.stringify(features_json)]
+    const { features_json } = req.body;
+    const [result] = await pool.query(
+      "INSERT INTO features_capability (features_json) VALUES (?)",
+      [JSON.stringify(features_json || [])]
     );
-    res.status(201).json({ message: "Capability added successfully" });
+    res.status(201).json({ message: "Capability added successfully", id: result.insertId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error adding capability" });
@@ -109,17 +110,26 @@ export const addFeatureCapability = async (req, res) => {
 export const getCapabilities = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT capability_id as id, features_json FROM feature_capability"
+      "SELECT capability_id as id, features_json FROM features_capability"
     );
-    // parse features_json for convenience
-    const parsed = rows.map((r) => ({
-      id: r.id,
-      features: JSON.parse(r.features_json),
-    }));
+    // parse features_json for convenience with robust fallback
+    const parsed = rows.map((r) => {
+      let features = [];
+      if (r && typeof r.features_json === "string") {
+        try {
+          const parsedJson = JSON.parse(r.features_json || "[]");
+          features = Array.isArray(parsedJson) ? parsedJson : [];
+        } catch (e) {
+          features = [];
+        }
+      }
+      return { id: r.id, features };
+    });
     res.status(200).json(parsed);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error fetching capabilities" });
+    // Return empty list if table missing or empty to allow UI empty-state
+    res.status(200).json([]);
   }
 };
 
@@ -138,7 +148,8 @@ export const getRoles = async (req, res) => {
     res.status(200).json(rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error fetching roles" });
+    // Return empty list if table missing or empty to allow UI empty-state
+    res.status(200).json([]);
   }
 };
 

@@ -39,3 +39,29 @@ export const getCompanyApps = async (req, res) => {
     return res.status(500).json({ message: "Failed to load apps for company" });
   }
 };
+
+// GET /api/public/teams
+export const getTeams = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, name FROM teams ORDER BY name"
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error("getTeams error:", err);
+    return res.status(500).json({ message: "Failed to load teams" });
+  }
+};
+
+// GET /api/public/ROLES
+export const getRoles = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, name FROM roles ORDER BY name"
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error("getRoles error:", err);
+    return res.status(500).json({ message: "Failed to load roels" });
+  }
+};

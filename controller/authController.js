@@ -5,25 +5,37 @@ import { signToken, verifyToken } from "../utils/jwt.js";
 // LOGIN controller
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
+    // Validate required fields early to prevent DB/query errors
+    if (!email || !password) {
+      console.log("Missing credentials on login attempt", { email, password });
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
+    }
     // Determine current company/app from middleware (req.company) or params
-    const companySlug = req.company?.slug || req.params?.company || null;
-    const appSlug = req.app?.slug || req.params?.appSlug || null;
+    const companySlug = req.company?.slug || req.params?.company ||req.companySlug|| null;
+    const appSlug = req.app?.slug || req.params?.appSlug || req.appSlug || null;
 
-    // First verify the company exists and get the exact slug
+    // First verify the company exists and get the company details
     console.log("Verifying company slug:", companySlug);
-    const [companyRows] = await pool.query(
-      "SELECT slug FROM companies WHERE slug = ?",
+    const [companys] = await pool.query(
+      "SELECT  slug, name FROM companies WHERE slug = ?",
       [companySlug]
     );
+    const [companysID] = await pool.query(
+      "SELECT  id FROM companies WHERE slug = ?",
+      [companySlug]
+    );
+     console.log("Company ID lookup result:", companysID);
 
-    if (!companySlug || companyRows.length === 0) {
-      console.log("Company not found:", companySlug);
+    if (!companySlug || companys.length === 0) {
+      console.log("[auth controller] Company not found:", companySlug);
       return res.status(404).json({ message: "Company not found" });
     }
 
     // Get the exact company slug from the database
-    const correctCompanySlug = companyRows[0].slug;
+    const correctCompanySlug = companys[0].slug;
 
     console.log("Request details:", {
       body: req.body,
@@ -34,19 +46,13 @@ export const loginUser = async (req, res) => {
       appSlug,
     });
 
-    // Get user data with company/role/team names (join by _id FK columns)
-    const [rows] = await pool.query(
-      `
-      SELECT u.*, c.slug as company_slug, c.id as company_id, c.name as company_name,
-             r.name as role_name, t.name as team_name
-      FROM users u
-      LEFT JOIN companies c ON u.company_id = c.id
-      LEFT JOIN roles r ON u.role_id = r.id
-      LEFT JOIN teams t ON u.team_id = t.id
-      WHERE u.email = ?
-    `,
-      [email]
-    );
+    // Fetch the user row without joining other tables to avoid schema
+    // mismatch errors (some deployments store company as slug, others
+    // use company_id). We'll inspect the user row and compare against
+    // the company we looked up above.
+    const [rows] = await pool.query(`SELECT * FROM users WHERE email = ?`, [
+      email,
+    ]);
 
     console.log("Found user data:", rows[0]);
 
@@ -54,54 +60,58 @@ export const loginUser = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
 
     const user = rows[0];
+    console.log("Verifying password for user:", user);
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch)
       return res.status(401).json({ message: "Invalid credentials" });
 
-    // Ensure the user belongs to the same company as the companySlug
-    console.log(
-      "Login attempt - User company_id:",
-      user.company_id,
-      "Request company (slug):",
-      companySlug
-    );
+    // Determine user's company value: prefer slug stored on users table
+    const userCompanyId = user.company_id || null;
+    const userCompanySlug = await pool.query(
+      "SELECT slug FROM companies WHERE id = ? LIMIT 1",
+      [user.company_id]
+    ).then(([rows]) => (rows.length > 0 ? rows[0].slug : null));
+    //.then(([rows]) => (rows.length > 0 ? rows[0].slug : null)); is used to fetch slug from company id
 
-    // Check if user has company info (company_id FK)
-    if (!user.company_id) {
-      console.log("User has no company assigned:", user);
+    console.log("Login attempt - user company values:", {
+      userCompanySlug,
+      userCompanyId,
+      requestedCompanySlug: companySlug,
+    });
+
+    // If user has company slug, compare slugs. Else if user has company_id, compare ids.
+    if (userCompanySlug) {
+      if (userCompanySlug !== correctCompanySlug) {
+        console.log("Company validation failed (slug mismatch)", {
+          userCompanySlug,
+          requestedCompany: companySlug,
+          correctCompanySlug,
+        });
+        return res.status(403).json({
+          message: "User does not belong to this company",
+          debug: { userCompanySlug, requestedCompany: companySlug },
+        });
+      }
+    } else if (userCompanyId) {
+      if (userCompanyId !== companysID[0].id) {
+        console.log("Company validation failed (id mismatch)", {
+          userCompanyId,
+          requestedCompany: companySlug,
+          expectedCompanyId: companysID[0].id,
+        });
+        return res.status(403).json({
+          message: "User does not belong to this company",
+          debug: { userCompanyId, requestedCompany: companySlug },
+        });
+      }
+    } else {
+      console.log("User has no company info on record", { user });
       return res
         .status(403)
         .json({ message: "User does not have a company assigned" });
     }
 
-    console.log("Company comparison:", {
-      userCompanyId: user.company_id,
-      expectedCompanyId: companyRows[0].id,
-      userCompanySlug: user.company_slug,
-      correctCompanySlug,
-      match: user.company_id === companyRows[0].id,
-    });
-
-    // Compare using company id
-    if (user.company_id !== companyRows[0].id) {
-      console.log("Company validation failed", {
-        userCompanyId: user.company_id,
-        requestedCompany: companySlug,
-        expectedCompanyId: companyRows[0].id,
-      });
-      return res
-        .status(403)
-        .json({
-          message: "User does not belong to this company",
-          debug: {
-            userCompanyId: user.company_id,
-            requestedCompany: companySlug,
-          },
-        });
-    }
-
-    // Fetch role-based capability and features (permissions)
     // Fetch role-based capability and features (permissions)
     let capabilityRows = [];
     const roleName = user.role_name || user.role || null;
@@ -162,39 +172,45 @@ export const loginUser = async (req, res) => {
       appAccess, // Add list of accessible app IDs
     };
 
-    const token = signToken(tokenPayload);
+    let token;
+    try {
+      token = signToken(tokenPayload);
+    } catch (e) {
+      console.error(
+        "Failed to sign JWT token:",
+        e && e.message ? e.message : e
+      );
+      return res.status(500).json({
+        message: "Server error: failed to create authentication token",
+      });
+    }
 
-    // Send token as cookie. Use 'lax' on development to allow cross-port cookies; in production prefer 'strict' or 'none' with secure.
+    // Send token as cookie
     res.cookie("token", token, {
       httpOnly: true,
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
       secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 3600 * 1000,
     });
-    // Determine the dashboard route based on user role
-    let dashboardRoute = "/dashboard"; // default route
 
-    switch (user.role?.toLowerCase()) {
-      case "admin":
-        dashboardRoute = "/admin/dashboard";
-        break;
-      case "user":
-        dashboardRoute = "/user/dashboard";
-        break;
-      case "manager":
-        dashboardRoute = "/manager/dashboard";
-        break;
-      // Add more role-based routes as needed
-    }
+    // Determine the dashboard route based on user role
+    const user_role=await pool.query(
+      "SELECT name FROM roles WHERE id=? LIMIT 1",[user.role_id]).then(([rows]) => (rows.length > 0 ? rows[0].name : null));
+    console.log("Determining dashboard route for role:", user_role);
+    
+    let dashboardRoute = `/${companySlug}/${appSlug}/${user_role}/dashboard`; // default route
+
 
     res.status(200).json({
       message: "Login successful",
       user: tokenPayload,
+      token,
       dashboardRoute,
       company: {
         slug: correctCompanySlug,
-        name: rows[0].company_name,
+        name: companys[0].name,
       },
+      app: req.app,
     });
   } catch (err) {
     console.error("Login error:", err);

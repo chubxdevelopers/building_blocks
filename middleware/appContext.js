@@ -56,15 +56,17 @@ export const appContext = async (req, res, next) => {
 
     // Load company record
     const [companyRows] = await pool.query(
-      "SELECT * FROM companies WHERE slug = ? LIMIT 1",
+      "SELECT * FROM companies WHERE slug = ?",
       [companySlug]
     );
+    console.log("companyRows:", companyRows);
     if (!companyRows || companyRows.length === 0) {
       return res
         .status(404)
         .json({ message: `Company not found: ${companySlug}` });
     }
     const company = companyRows[0];
+    console.log("Loaded company:", company);
     try {
       if (company.settings && typeof company.settings === "string")
         company.settings = JSON.parse(company.settings);
@@ -81,12 +83,14 @@ export const appContext = async (req, res, next) => {
         "SELECT * FROM apps WHERE slug = ? AND company_id = ? LIMIT 1",
         [appSlug, company.id]
       );
+      console.log("appRows:", appRows);
       if (!appRows || appRows.length === 0) {
         return res.status(404).json({
           message: `App not found: ${appSlug} for company ${companySlug}`,
         });
       }
       const appRow = appRows[0];
+      console.log("Loaded app:", appRow);
       try {
         if (appRow.settings && typeof appRow.settings === "string")
           appRow.settings = JSON.parse(appRow.settings);
@@ -94,6 +98,7 @@ export const appContext = async (req, res, next) => {
         console.warn("Failed to parse app.settings JSON", e);
       }
       req.app = appRow;
+      console.log("appRow:", appRow);
     } else {
       req.app = null;
     }

@@ -10,12 +10,12 @@ import {
   addRoleCapability,
   registerAdmin,
 } from "../controller/adminController.js";
-
+import { appContext } from "../middleware/appContext.js";
 const router = express.Router();
 
 // Protect all admin routes
 // router.use(protect);
-router.post("/register", registerAdmin);
+router.post("/register",appContext, registerAdmin);
 router.post("/add-user", protect, addUser);
 router.post("/add-feature", protect, addFeature);
 // list features (non-destructive)
