@@ -1,4 +1,5 @@
 import { pool } from "../db.js";
+import { execQuery } from "../utils/queryBuilder/queryExecutor.js";
 
 /**
  * Middleware to detect which app/company is being used from the request URL.
@@ -28,13 +29,14 @@ export const appContext = async (req, res, next) => {
       appSlug = parts.length > 1 ? parts[1] : null;
     }
 
-    // If this is a root public API path (e.g. /api/public/...), skip context
-    // detection — these endpoints are global and should not be treated as a
-    // company/app-scoped request. Exit early so mounted public routes can run.
+    // If this is a root public API path (e.g. /api/public/...) or the
+    // canonical query endpoint (/api/query/...), skip context detection —
+    // these endpoints are global and should not be treated as a
+    // company/app-scoped request. Exit early so mounted public/query routes can run.
     if (
       parts.length > 1 &&
       parts[0].toLowerCase() === "api" &&
-      parts[1].toLowerCase() === "public"
+      (parts[1].toLowerCase() === "public" || parts[1].toLowerCase() === "query")
     ) {
       req.company = null;
       req.app = null;
@@ -59,12 +61,12 @@ export const appContext = async (req, res, next) => {
       return next();
     }
 
-    // Load company record
-    const [companyRows] = await pool.query(
-      "SELECT * FROM companies WHERE slug = ?",
-      [companySlug]
-    );
-    console.log("companyRows:", companyRows );
+    // Load company record via query builder
+    const companyRows = await execQuery({
+      resource: "companies",
+      filters: { "slug": companySlug },
+      pagination: { limit: 1 },
+    });
     if (!companyRows || companyRows.length === 0) {
       return res
         .status(404)
@@ -84,11 +86,11 @@ export const appContext = async (req, res, next) => {
 
     // If appSlug provided, load app under this company
     if (appSlug) {
-      const [appRows] = await pool.query(
-        "SELECT * FROM apps WHERE slug = ? AND company_id = ? LIMIT 1",
-        [appSlug, company.id]
-      );
-      console.log("appRows:", appRows);
+      const appRows = await execQuery({
+        resource: "apps",
+        filters: { "slug": appSlug, "company_id": company.id },
+        pagination: { limit: 1 },
+      });
       if (!appRows || appRows.length === 0) {
         return res.status(404).json({
           message: `App not found: ${appSlug} for company ${companySlug}`,

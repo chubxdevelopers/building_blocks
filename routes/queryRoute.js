@@ -46,6 +46,8 @@ const router = express.Router();
 router.use(versionControl);
 
 // Mount the versioned query handler
-router.route("/query/:version/:resource").all(handleVersionedQuery);
+// Note: router is mounted at /api/query in index.js, so the route here
+// should be "/:version/:resource" to produce /api/query/:version/:resource
+router.route("/:version/:resource").all(handleVersionedQuery);
 
 export default router;

@@ -1,4 +1,4 @@
-import { pool } from "../db.js";
+import { execQuery } from "../utils/queryBuilder/queryExecutor.js";
 
 export const getPublicData = (req, res) => {
   res.json({ message: "This is a public route accessible without login." });
@@ -7,9 +7,13 @@ export const getPublicData = (req, res) => {
 // GET /api/public/companies
 export const getCompanies = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT id, name, slug FROM companies ORDER BY name"
-    );
+    const rows = await execQuery({
+      resource: "companies",
+      filters: null,
+      orderBy: { name: "asc" },
+      pagination: null,
+      jwt: req.jwt,
+    });
     return res.json(rows);
   } catch (err) {
     console.error("getCompanies error:", err);
@@ -21,18 +25,26 @@ export const getCompanies = async (req, res) => {
 export const getCompanyApps = async (req, res) => {
   const { companySlug } = req.params;
   try {
-    const [companyRows] = await pool.query(
-      "SELECT id FROM companies WHERE slug = ? LIMIT 1",
-      [companySlug]
-    );
+    // Resolve company by slug via query builder
+    const companyRows = await execQuery({
+      resource: "companies",
+      filters: { slug: companySlug },
+      orderBy: null,
+      pagination: null,
+      jwt: req.jwt,
+    });
     if (!companyRows || companyRows.length === 0) {
       return res.status(404).json({ message: "Company not found" });
     }
     const companyId = companyRows[0].id;
-    const [apps] = await pool.query(
-      "SELECT id, name, slug, company_id FROM apps WHERE company_id = ? ORDER BY name",
-      [companyId]
-    );
+
+    const apps = await execQuery({
+      resource: "apps",
+      filters: { company_id: companyId },
+      orderBy: { name: "asc" },
+      pagination: null,
+      jwt: req.jwt,
+    });
     return res.json(apps);
   } catch (err) {
     console.error("getCompanyApps error:", err);
@@ -43,9 +55,13 @@ export const getCompanyApps = async (req, res) => {
 // GET /api/public/teams
 export const getTeams = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT id, name FROM teams ORDER BY name"
-    );
+    const rows = await execQuery({
+      resource: "teams",
+      filters: null,
+      orderBy: { name: "asc" },
+      pagination: null,
+      jwt: req.jwt,
+    });
     return res.json(rows);
   } catch (err) {
     console.error("getTeams error:", err);
@@ -56,9 +72,13 @@ export const getTeams = async (req, res) => {
 // GET /api/public/ROLES
 export const getRoles = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT id, name FROM roles ORDER BY name"
-    );
+    const rows = await execQuery({
+      resource: "roles",
+      filters: null,
+      orderBy: { name: "asc" },
+      pagination: null,
+      jwt: req.jwt,
+    });
     return res.json(rows);
   } catch (err) {
     console.error("getRoles error:", err);
@@ -69,9 +89,13 @@ export const getRoles = async (req, res) => {
 // // GET /api/public/capabilities
 export const getCapabilities = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT capability_id, name FROM features_capability ORDER BY name"
-    );
+    const rows = await execQuery({
+      resource: "features_capability",
+      filters: null,
+      orderBy: { name: "asc" },
+      pagination: null,
+      jwt: req.jwt,
+    });
     return res.json(rows);
   } catch (err) {
     console.error("getCapabilities error:", err);
@@ -81,9 +105,13 @@ export const getCapabilities = async (req, res) => {
 
 export const getFeatures = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT id, feature_name FROM features ORDER BY feature_name"
-    );
+    const rows = await execQuery({
+      resource: "features",
+      filters: null,
+      orderBy: { feature_name: "asc" },
+      pagination: null,
+      jwt: req.jwt,
+    });
     return res.json(rows);
   } catch (err) {
     console.error("getFeatures error:", err);

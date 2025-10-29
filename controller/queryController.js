@@ -1,5 +1,4 @@
-import { pool } from "../db.js";
-import { buildQuery } from "../utils/queryBuilder/queryBuilder.js";
+import { execQuery, execInsert } from "../utils/queryBuilder/queryExecutor.js";
 
 export async function handleVersionedQuery(req, res) {
   const { version, resource } = req.params;
@@ -14,17 +13,14 @@ export async function handleVersionedQuery(req, res) {
   // GET request handler for fetching data
   if (method === "GET") {
     try {
-      // Build the SQL query using the query builder
-      const query = buildQuery({
-        resource, // The resource to query (e.g., 'users', 'products')
-        filters: filters ? JSON.parse(filters) : null, // WHERE conditions
-        orderBy: orderBy ? JSON.parse(orderBy) : null, // ORDER BY clause
-        pagination: pagination ? JSON.parse(pagination) : null, // LIMIT/OFFSET
-        jwt: req.jwt, // Security context for row-level security
+      // Build and execute the SQL query using the centralized executor
+      const rows = await execQuery({
+        resource,
+        filters: filters ? JSON.parse(filters) : null,
+        orderBy: orderBy ? JSON.parse(orderBy) : null,
+        pagination: pagination ? JSON.parse(pagination) : null,
+        jwt: req.jwt,
       });
-
-      // Execute the query
-      const [rows] = await pool.query(query);
 
       // Format response with pagination metadata
       return res.json({
@@ -47,19 +43,12 @@ export async function handleVersionedQuery(req, res) {
   if (method === "POST") {
     const body = req.body;
     try {
-      // Validate the resource exists
-      const query = buildQuery({
-        resource,
-        filters: null,
-        orderBy: null,
-        pagination: null,
-        jwt: req.jwt,
-      });
+      // Optional: attempt to build/select from the resource to validate it
+      // (execQuery will throw if resource definition is invalid)
+      await execQuery({ resource, filters: null, orderBy: null, pagination: null, jwt: req.jwt });
 
-      // If query builds successfully, resource is valid
-      const [result] = await pool.query(`INSERT INTO ${resource} SET ?`, [
-        body,
-      ]);
+      // Execute insert via executor (parameterized)
+      const result = await execInsert(resource, body);
 
       return res.status(201).json({
         data: {

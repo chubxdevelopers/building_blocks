@@ -1,5 +1,4 @@
-import { pool } from "../db.js";
-import { buildQuery } from "../utils/queryBuilder/queryBuilder.js";
+import { execQuery } from "../utils/queryBuilder/queryExecutor.js";
 
 // Execute a query built from the request body
 export const handleDBQuery = async (req, res) => {
@@ -22,16 +21,14 @@ export const handleDBQuery = async (req, res) => {
       team_ids: team ? [team] : [],
     };
 
-    const sql = buildQuery({
+    // Use execQuery to build SQL and execute it
+    const rows = await execQuery({
       resource,
       filters,
       orderBy,
       pagination,
       jwt: jwtPayload,
     });
-
-    // Run the query
-    const [rows] = await pool.promise().query(sql);
 
     res.json({ data: rows });
   } catch (err) {

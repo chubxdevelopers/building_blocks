@@ -1,4 +1,4 @@
-import { pool } from "../db.js";
+import { execQuery } from "../utils/queryBuilder/queryExecutor.js";
 
 /**
  * GET /api/:appSlug/app/query
@@ -16,9 +16,13 @@ export const getAppQuery = async (req, res) => {
     const appSlug = req.params?.appSlug || (app ? app.slug : null);
 
     if (!company && companySlug) {
-      const [rows] = await pool
-        .promise()
-        .query("SELECT * FROM companies WHERE slug = ? LIMIT 1", [companySlug]);
+      const rows = await execQuery({
+        resource: "companies",
+        filters: { slug: companySlug },
+        orderBy: null,
+        pagination: null,
+        jwt: req.jwt,
+      });
       if (!rows || rows.length === 0)
         return res.status(404).json({ message: "Company not found" });
       company = rows[0];
@@ -29,12 +33,13 @@ export const getAppQuery = async (req, res) => {
     }
 
     if (!app && appSlug && company) {
-      const [rows] = await pool
-        .promise()
-        .query("SELECT * FROM apps WHERE slug = ? AND company_id = ? LIMIT 1", [
-          appSlug,
-          company.id,
-        ]);
+      const rows = await execQuery({
+        resource: "apps",
+        filters: { slug: appSlug, company_id: company.id },
+        orderBy: null,
+        pagination: null,
+        jwt: req.jwt,
+      });
       if (!rows || rows.length === 0)
         return res.status(404).json({ message: "App not found" });
       app = rows[0];

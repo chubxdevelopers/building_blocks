@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { pool } from "../db.js";
+import { execQuery } from "../utils/queryBuilder/queryExecutor.js";
 import { signToken, verifyToken } from "../utils/jwt.js";
 
 // LOGIN controller
@@ -19,23 +19,23 @@ export const loginUser = async (req, res) => {
 
     // First verify the company exists and get the company details
     console.log("Verifying company slug:", companySlug);
-    const [companys] = await pool.query(
-      "SELECT  slug, name FROM companies WHERE slug = ?",
-      [companySlug]
-    );
-    const [companysID] = await pool.query(
-      "SELECT  id FROM companies WHERE slug = ?",
-      [companySlug]
-    );
-     console.log("Company ID lookup result:", companysID);
+    const companyRows = companySlug
+      ? await execQuery({
+          resource: "companies",
+          filters: { slug: companySlug },
+          orderBy: null,
+          pagination: null,
+          jwt: req.jwt,
+        })
+      : [];
 
-    if (!companySlug || companys.length === 0) {
+    if (!companySlug || companyRows.length === 0) {
       console.log("[auth controller] Company not found:", companySlug);
       return res.status(404).json({ message: "Company not found" });
     }
 
-    // Get the exact company slug from the database
-    const correctCompanySlug = companys[0].slug;
+    const correctCompanySlug = companyRows[0].slug;
+    const companyId = companyRows[0].id;
 
     console.log("Request details:", {
       body: req.body,
@@ -50,14 +50,17 @@ export const loginUser = async (req, res) => {
     // mismatch errors (some deployments store company as slug, others
     // use company_id). We'll inspect the user row and compare against
     // the company we looked up above.
-    const [rows] = await pool.query(`SELECT * FROM users WHERE email = ?`, [
-      email,
-    ]);
+    const rows = await execQuery({
+      resource: "users",
+      filters: { email },
+      orderBy: null,
+      pagination: null,
+      jwt: req.jwt,
+    });
 
     console.log("Found user data:", rows[0]);
 
-    if (rows.length === 0)
-      return res.status(404).json({ message: "User not found" });
+    if (!rows || rows.length === 0) return res.status(404).json({ message: "User not found" });
 
     const user = rows[0];
     console.log("Verifying password for user:", user);
@@ -68,10 +71,17 @@ export const loginUser = async (req, res) => {
 
     // Determine user's company value: prefer slug stored on users table
     const userCompanyId = user.company_id || null;
-    const userCompanySlug = await pool.query(
-      "SELECT slug FROM companies WHERE id = ? LIMIT 1",
-      [user.company_id]
-    ).then(([rows]) => (rows.length > 0 ? rows[0].slug : null));
+    let userCompanySlug = null;
+    if (userCompanyId) {
+      const comp = await execQuery({
+        resource: "companies",
+        filters: { id: userCompanyId },
+        orderBy: null,
+        pagination: null,
+        jwt: req.jwt,
+      });
+      userCompanySlug = comp && comp.length > 0 ? comp[0].slug : null;
+    }
     //.then(([rows]) => (rows.length > 0 ? rows[0].slug : null)); is used to fetch slug from company id
 
     console.log("Login attempt - user company values:", {
@@ -94,11 +104,11 @@ export const loginUser = async (req, res) => {
         });
       }
     } else if (userCompanyId) {
-      if (userCompanyId !== companysID[0].id) {
+      if (userCompanyId !== companyId) {
         console.log("Company validation failed (id mismatch)", {
           userCompanyId,
           requestedCompany: companySlug,
-          expectedCompanyId: companysID[0].id,
+          expectedCompanyId: companyId,
         });
         return res.status(403).json({
           message: "User does not belong to this company",
@@ -112,22 +122,48 @@ export const loginUser = async (req, res) => {
         .json({ message: "User does not have a company assigned" });
     }
 
-    // Fetch role-based capability and features (permissions)
+    // Fetch role-based capability and features (permissions) using query builder
     let capabilityRows = [];
-    const roleName = user.role_name || user.role || null;
-    const teamName = user.team_name || user.team || null;
+    const roleName = user.role || null;
+    const teamName = user.team || null;
     try {
-      const [capRows] = await pool.query(
-        `SELECT f.features_json, a.id as app_id 
-         FROM features_capability f 
-         JOIN role_capability r ON f.capability_id = r.capability_id 
-         LEFT JOIN apps a ON r.company = ? AND a.slug = ?
-         WHERE r.role = ? AND r.team = ? AND r.company = ?`,
-        [correctCompanySlug, appSlug, roleName, teamName, correctCompanySlug]
-      );
-      capabilityRows = capRows;
+      // Find matching role_capability entries
+      const rcRows = await execQuery({
+        resource: "role_capability",
+        filters: { role: roleName, team: teamName, company: correctCompanySlug },
+        orderBy: null,
+        pagination: null,
+        jwt: req.jwt,
+      });
+
+      if (rcRows && rcRows.length > 0) {
+        // For each capability_id, fetch the features JSON
+        for (const rc of rcRows) {
+          const fc = await execQuery({
+            resource: "features_capability",
+            filters: { capability_id: rc.capability_id },
+            orderBy: null,
+            pagination: null,
+            jwt: req.jwt,
+          });
+          if (fc && fc.length > 0) {
+            // Determine app id if appSlug provided
+            let app_id = null;
+            if (appSlug) {
+              const appRows = await execQuery({
+                resource: "apps",
+                filters: { slug: appSlug, company_id: companyId },
+                orderBy: null,
+                pagination: null,
+                jwt: req.jwt,
+              });
+              if (appRows && appRows.length > 0) app_id = appRows[0].id;
+            }
+            capabilityRows.push({ features_json: fc[0].features_json, app_id });
+          }
+        }
+      }
     } catch (e) {
-      // If capability tables are not present or query fails, continue without permissions
       console.warn(
         "Capability lookup failed or tables missing, continuing without uiPermissions:",
         e.message
@@ -168,7 +204,7 @@ export const loginUser = async (req, res) => {
       role: user.role,
       team: user.team,
       company: companySlug || user.company,
-      companyId: companysID && companysID[0] ? companysID[0].id : undefined,
+  companyId: companyId,
       uiPermissions,
       appAccess, // Add list of accessible app IDs
     };
@@ -195,10 +231,16 @@ export const loginUser = async (req, res) => {
     });
 
     // Determine the dashboard route based on user role
-    const user_role=await pool.query(
-      "SELECT name FROM roles WHERE id=? LIMIT 1",[user.role_id]).then(([rows]) => (rows.length > 0 ? rows[0].name : null));
+    const roleRows = await execQuery({
+      resource: "roles",
+      filters: { id: user.role_id },
+      orderBy: null,
+      pagination: null,
+      jwt: req.jwt,
+    });
+    const user_role = roleRows && roleRows.length > 0 ? roleRows[0].name : null;
     console.log("Determining dashboard route for role:", user_role);
-    
+
     let dashboardRoute = `/${companySlug}/${appSlug}/${user_role}/dashboard`; // default route
 
 
@@ -209,7 +251,7 @@ export const loginUser = async (req, res) => {
       dashboardRoute,
       company: {
         slug: correctCompanySlug,
-        name: companys[0].name,
+        name: companyRows[0].name,
       },
       app: req.app,
     });

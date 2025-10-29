@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { pool } from "../db.js";
 import { signToken } from "../utils/jwt.js";
+import { execQuery, execInsert, execUpdate } from "../utils/queryBuilder/queryExecutor.js";
 
 // Add new user (Admin only)
 export const addUser = async (req, res) => {
@@ -15,15 +16,13 @@ export const addUser = async (req, res) => {
     // Ensure team exists (find or create)
     let teamId = null;
     if (team) {
-      const [teamRows] = await pool.query(
-        "SELECT id FROM teams WHERE name = ? AND company_id = ? LIMIT 1",
-        [team, req.company.id]
-      );
+      const teamRows = await execQuery({
+        resource: "teams",
+        filters: { "name": team, "company_id": req.company.id },
+        pagination: { limit: 1 },
+      });
       if (teamRows.length === 0) {
-        const [tRes] = await pool.query(
-          "INSERT INTO teams (name, company_id) VALUES (?, ?)",
-          [team, req.company.id]
-        );
+        const tRes = await execInsert("teams", { name: team, company_id: req.company.id });
         teamId = tRes.insertId;
       } else {
         teamId = teamRows[0].id;
@@ -33,15 +32,13 @@ export const addUser = async (req, res) => {
     // Ensure role exists (find or create)
     let roleId = null;
     if (role) {
-      const [roleRows] = await pool.query(
-        "SELECT id FROM roles WHERE name = ? AND company_id = ? LIMIT 1",
-        [role, req.company.id]
-      );
+      const roleRows = await execQuery({
+        resource: "roles",
+        filters: { "name": role, "company_id": req.company.id },
+        pagination: { limit: 1 },
+      });
       if (roleRows.length === 0) {
-        const [rRes] = await pool.query(
-          "INSERT INTO roles (name, team_id, company_id) VALUES (?, ?, ?)",
-          [role, teamId || null, req.company.id]
-        );
+        const rRes = await execInsert("roles", { name: role, team_id: teamId || null, company_id: req.company.id });
         roleId = rRes.insertId;
       } else {
         roleId = roleRows[0].id;
@@ -50,10 +47,7 @@ export const addUser = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await pool.query(
-      "INSERT INTO users (name, email, password, role_id, team_id, company_id) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, email, hashedPassword, roleId, teamId, req.company.id]
-    );
+    await execInsert("users", { name, email, password: hashedPassword, role_id: roleId, team_id: teamId, company_id: req.company.id });
 
     res.status(201).json({ message: "User added successfully" });
   } catch (err) {
@@ -66,10 +60,7 @@ export const addUser = async (req, res) => {
 export const addFeature = async (req, res) => {
   try {
     const { feature_name, feature_tag, type } = req.body;
-    await pool.query(
-      "INSERT INTO features (feature_name, feature_tag, type) VALUES (?, ?, ?)",
-      [feature_name, feature_tag, type]
-    );
+    await execInsert("features", { feature_name, feature_tag, type });
     res.status(201).json({ message: "Feature added successfully" });
   } catch (err) {
     console.error(err);
@@ -80,9 +71,7 @@ export const addFeature = async (req, res) => {
 // Get list of features
 export const getFeatures = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT id, feature_name, feature_tag, type FROM features"
-    );
+    const rows = await execQuery({ resource: "features" });
     res.status(200).json(rows);
   } catch (err) {
     console.error(err);
@@ -95,10 +84,7 @@ export const getFeatures = async (req, res) => {
 export const addFeatureCapability = async (req, res) => {
   try {
     const { features_json } = req.body;
-    const [result] = await pool.query(
-      "INSERT INTO features_capability (features_json) VALUES (?)",
-      [JSON.stringify(features_json || [])]
-    );
+    const result = await execInsert("features_capability", { features_json: JSON.stringify(features_json || []) });
     res.status(201).json({ message: "Capability added successfully", id: result.insertId });
   } catch (err) {
     console.error(err);
@@ -109,9 +95,7 @@ export const addFeatureCapability = async (req, res) => {
 // Get capabilities (feature_capability)
 export const getCapabilities = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT capability_id as id, features_json FROM features_capability"
-    );
+    const rows = await execQuery({ resource: "features_capability" });
     // parse features_json for convenience with robust fallback
     const parsed = rows.map((r) => {
       let features = [];
@@ -136,14 +120,11 @@ export const getCapabilities = async (req, res) => {
 // Get roles list (scoped to company if available)
 export const getRoles = async (req, res) => {
   try {
-    let rows;
+  let rows = [];
     if (req.company && req.company.id) {
-      [rows] = await pool.query(
-        "SELECT id, name FROM roles WHERE company_id = ?",
-        [req.company.id]
-      );
+      rows = await execQuery({ resource: "roles", filters: { "company_id": req.company.id } });
     } else {
-      [rows] = await pool.query("SELECT id, name FROM roles");
+      rows = await execQuery({ resource: "roles" });
     }
     res.status(200).json(rows);
   } catch (err) {
@@ -166,10 +147,7 @@ export const registerAdmin = async (req, res) => {
     }
 
     // Check if email already exists
-    const [existingUsers] = await pool.query(
-      "SELECT id FROM users WHERE email = ?",
-      [email]
-    );
+    const existingUsers = await execQuery({ resource: "users", filters: { "email": email }, pagination: { limit: 1 } });
     if (existingUsers.length > 0) {
       return res.status(400).json({ message: "Email already in use" });
     }
@@ -177,15 +155,9 @@ export const registerAdmin = async (req, res) => {
     // 1) Ensure default team exists for company
     const defaultTeamName = "Default";
     let teamId;
-    const [teamRows] = await pool.query(
-      "SELECT id FROM teams WHERE name = ? AND company_id = ? LIMIT 1",
-      [defaultTeamName, req.company.id]
-    );
+    const teamRows = await execQuery({ resource: "teams", filters: { "name": defaultTeamName, "company_id": req.company.id }, pagination: { limit: 1 } });
     if (teamRows.length === 0) {
-      const [tRes] = await pool.query(
-        "INSERT INTO teams (name, company_id) VALUES (?, ?)",
-        [defaultTeamName, req.company.id]
-      );
+      const tRes = await execInsert("teams", { name: defaultTeamName, company_id: req.company.id });
       teamId = tRes.insertId;
     } else {
       teamId = teamRows[0].id;
@@ -194,15 +166,9 @@ export const registerAdmin = async (req, res) => {
     // 2) Ensure Admin role exists for company
     const adminRoleName = "Admin";
     let roleId;
-    const [roleRows] = await pool.query(
-      "SELECT id FROM roles WHERE name = ? AND company_id = ? LIMIT 1",
-      [adminRoleName, req.company.id]
-    );
+    const roleRows = await execQuery({ resource: "roles", filters: { "name": adminRoleName, "company_id": req.company.id }, pagination: { limit: 1 } });
     if (roleRows.length === 0) {
-      const [rRes] = await pool.query(
-        "INSERT INTO roles (name, team_id, company_id) VALUES (?, ?, ?)",
-        [adminRoleName, teamId, req.company.id]
-      );
+      const rRes = await execInsert("roles", { name: adminRoleName, team_id: teamId, company_id: req.company.id });
       roleId = rRes.insertId;
     } else {
       roleId = roleRows[0].id;
@@ -210,10 +176,7 @@ export const registerAdmin = async (req, res) => {
 
     // 3) Create user with FK ids
     const hashedPassword = await bcrypt.hash(password, 10);
-    const [userRes] = await pool.query(
-      "INSERT INTO users (name, email, password, role_id, team_id, company_id) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, email, hashedPassword, roleId, teamId, req.company.id]
-    );
+    const userRes = await execInsert("users", { name, email, password: hashedPassword, role_id: roleId, team_id: teamId, company_id: req.company.id });
 
     const tokenPayload = {
       id: userRes.insertId,
@@ -257,10 +220,7 @@ export const addRoleCapability = async (req, res) => {
   try {
     const { role, team, capability_id } = req.body;
     const company = req.body.company || req.company?.slug || null;
-    await pool.query(
-      "INSERT INTO role_capability (role, team, company, capability_id) VALUES (?, ?, ?, ?)",
-      [role, team, company, capability_id]
-    );
+    await execInsert("role_capability", { role, team, company, capability_id });
     res
       .status(201)
       .json({ message: "Role-capability mapping added successfully" });
@@ -274,10 +234,8 @@ export const updateRoleCapability = async (req, res) => {
   try {
     const { role, team, capability_id } = req.body;
     const company = req.body.company || req.company?.slug || null;
-    await pool.query(
-      "UPDATE role_capability SET role = ?, team = ?, company = ?, capability_id = ? WHERE role = ? AND team = ? AND company = ?",
-      [role, team, company, capability_id, role, team, company]
-    );
+    // update via execUpdate using filters to build WHERE clause
+    await execUpdate("role_capability", { role, team, company, capability_id }, { "role": role, "team": team, "company": company });
     res.status(200).json({ message: "Role-capability mapping updated successfully" });
   }
   catch (err) {

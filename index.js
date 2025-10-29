@@ -11,6 +11,7 @@ import userRoutes from "./routes/userRoute.js";
 import appRoutes from "./routes/appRoute.js";
 import queryRoutes from "./routes/queryRoute.js";
 import { appContext } from "./middleware/appContext.js";
+import { attachJwt } from "./middleware/jwtAttach.js";
 
 dotenv.config();
 const app = express();
@@ -33,6 +34,9 @@ app.use(cookieParser());
 // Attach app/company context (reads first segment after /api)
 app.use(appContext);
 
+// Attach decoded JWT payload (if present) to req.jwt for security injection
+app.use(attachJwt);
+
 // Routes
 // Mount routes under company + app slugs so frontend can call /api/:company/:appSlug/... for multi-tenant behavior
 app.use("/api/:company/:appSlug/auth", authRoutes);
@@ -49,6 +53,9 @@ app.use("/api/:company/:appSlug/public", publicApiRoutes);
 // Expose a canonical query endpoint used by frontend clients: /api/query/v1/:resource
 app.use("/api/query", queryRoutes);
 
-app.listen(process.env.PORT, () => {
-  console.log(`✅ Server running on port ${process.env.PORT}`);
+// Use a default port when PORT isn't provided in environment for convenience
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
