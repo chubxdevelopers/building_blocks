@@ -17,6 +17,7 @@ CREATE TABLE features (
 
 CREATE TABLE features_capability (
   capability_id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100),
   features_json JSON,
   CONSTRAINT chk_valid_json CHECK (JSON_VALID(features_json))
 );

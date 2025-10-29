@@ -5,7 +5,7 @@ import { signToken } from "../utils/jwt.js";
 // Add new user (Admin only)
 export const addUser = async (req, res) => {
   try {
-    const { name, email, password, role, team } = req.body;
+    const { name, email,company, password, role, team } = req.body;
 
     // Require company context
     if (!req.company || !req.company.id) {
@@ -236,7 +236,14 @@ export const registerAdmin = async (req, res) => {
 
     res
       .status(200)
-      .json({ message: "register successful", user: tokenPayload });
+      .json({
+        message: "register successful",
+        user: tokenPayload,
+        token,
+        company: { slug: req.company.slug, id: req.company.id, name: req.company.name },
+        app: req.app ? { id: req.app.id, slug: req.app.slug, name: req.app.name } : null,
+        dashboardRoute: `/${req.company.slug}/${req.app ? req.app.slug : ""}/admin/dashboard`.replace("//", "/"),
+      });
   } catch (err) {
     console.error(err);
     res
@@ -262,3 +269,20 @@ export const addRoleCapability = async (req, res) => {
     res.status(500).json({ message: "Error mapping role-capability" });
   }
 };
+
+export const updateRoleCapability = async (req, res) => {
+  try {
+    const { role, team, capability_id } = req.body;
+    const company = req.body.company || req.company?.slug || null;
+    await pool.query(
+      "UPDATE role_capability SET role = ?, team = ?, company = ?, capability_id = ? WHERE role = ? AND team = ? AND company = ?",
+      [role, team, company, capability_id, role, team, company]
+    );
+    res.status(200).json({ message: "Role-capability mapping updated successfully" });
+  }
+  catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error updating role-capability" });
+  }
+};
+

@@ -3,6 +3,8 @@ import {
   getCompanies,
   getCompanyApps,
   getTeams,
+  getCapabilities,
+  getFeatures,
   getRoles,
 } from "../controller/publicController.js";
 
@@ -19,5 +21,11 @@ router.get("/teams", getTeams);
 
 //GET /api/public/roles
 router.get("/roles", getRoles);
+
+//GET /api/public/capabilities
+router.get("/capabilities", getCapabilities);
+
+//GET /api/public/features
+router.get("/features", getFeatures);
 
 export default router;

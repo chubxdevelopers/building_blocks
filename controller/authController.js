@@ -168,6 +168,7 @@ export const loginUser = async (req, res) => {
       role: user.role,
       team: user.team,
       company: companySlug || user.company,
+      companyId: companysID && companysID[0] ? companysID[0].id : undefined,
       uiPermissions,
       appAccess, // Add list of accessible app IDs
     };
@@ -224,7 +225,13 @@ export const loginUser = async (req, res) => {
 // Verify token from cookie and return user payload (if valid)
 export const verifyUser = async (req, res) => {
   try {
-    const token = req.cookies?.token;
+    let token = req.cookies?.token;
+    if (!token && req.headers && req.headers.authorization) {
+      const auth = req.headers.authorization;
+      if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+        token = auth.substring("Bearer ".length);
+      }
+    }
     if (!token) return res.status(401).json({ message: "Not authenticated" });
     const decoded = verifyToken(token);
     if (!decoded)

@@ -4,7 +4,14 @@ import { verifyToken } from "../utils/jwt.js";
 
 export const protect = (req, res, next) => {
   try {
-    const token = req.cookies.token; // Read JWT from cookies
+    // Read JWT from cookies or Authorization header
+    let token = req.cookies && req.cookies.token ? req.cookies.token : null;
+    if (!token && req.headers && req.headers.authorization) {
+      const auth = req.headers.authorization;
+      if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+        token = auth.substring("Bearer ".length);
+      }
+    }
     if (!token) return res.status(401).json({ message: "Not authenticated" });
 
     const decoded = verifyToken(token);
@@ -16,7 +23,9 @@ export const protect = (req, res, next) => {
     // Check if user has access to the requested company/app
     if (req.company) {
       // First check company access
-      if (req.user.company !== req.company.slug) {
+      const companyMatchesBySlug = req.user.company === req.company.slug;
+      const companyMatchesById = req.user.companyId && req.company.id && req.user.companyId === req.company.id;
+      if (!companyMatchesBySlug && !companyMatchesById) {
         return res.status(403).json({
           message: "Access denied: User does not belong to this company",
           userCompany: req.user.company,

@@ -9,8 +9,13 @@ import { pool } from "../db.js";
 export const appContext = async (req, res, next) => {
   try {
     // Expect URL shape: /api/:company/:appSlug/...
-    const parts = req.path.split("/").filter(Boolean); // removes empty
-
+    // When middleware is mounted inside a router (e.g. /api/:company/:appSlug/admin),
+    // Express sets req.baseUrl to the mount path and req.path to the remaining path.
+    // Use baseUrl + path (or originalUrl) to extract slugs reliably.
+    const fullPath = (req.baseUrl || "") + (req.path || "") || req.originalUrl || "";
+    const parts = fullPath.split("/").filter(Boolean);
+    console.log("[appContext] fullPath:", fullPath);
+    console.log("[appContext] parts:", parts);
     let companySlug = null;
     let appSlug = null;
 
@@ -59,7 +64,7 @@ export const appContext = async (req, res, next) => {
       "SELECT * FROM companies WHERE slug = ?",
       [companySlug]
     );
-    console.log("companyRows:", companyRows);
+    console.log("companyRows:", companyRows );
     if (!companyRows || companyRows.length === 0) {
       return res
         .status(404)
@@ -115,8 +120,8 @@ export const appContext = async (req, res, next) => {
       companySlug,
       "appSlug=",
       appSlug,
-      "-> req.path=",
-      req.path
+      "-> fullPath=",
+      fullPath
     );
 
     return next();

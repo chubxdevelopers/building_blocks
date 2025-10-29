@@ -45,7 +45,7 @@ app.use("/api/:company/:appSlug/admin", adminRoutes);
 app.use("/api/:company/:appSlug/user", userRoutes);
 app.use("/api/:company/:appSlug/app", appRoutes);
 // Public endpoints that don't require company/app context (used by SelectCompany UI)
-app.use("/api/public", publicApiRoutes);
+app.use("/api/:company/:appSlug/public", publicApiRoutes);
 // Expose a canonical query endpoint used by frontend clients: /api/query/v1/:resource
 app.use("/api/query", queryRoutes);
 

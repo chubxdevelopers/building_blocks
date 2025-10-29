@@ -65,3 +65,28 @@ export const getRoles = async (req, res) => {
     return res.status(500).json({ message: "Failed to load roels" });
   }
 };
+
+// // GET /api/public/capabilities
+export const getCapabilities = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT capability_id, name FROM features_capability ORDER BY name"
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error("getCapabilities error:", err);
+    return res.status(500).json({ message: "Failed to load capabilities" });
+  }
+};
+
+export const getFeatures = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, feature_name FROM features ORDER BY feature_name"
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error("getFeatures error:", err);
+    return res.status(500).json({ message: "Failed to load features" });
+  }
+};
